@@ -1,0 +1,663 @@
+{
+  "name": "HubSpot Data Hygiene Auditor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "7122c665-49c2-4679-8d24-7a06e757e46d",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -768,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "operation": "getAll",
+        "returnAll": true,
+        "additionalFields": {
+          "propertiesCollection": {
+            "propertiesValues": {
+              "properties": [
+                "email",
+                "phone",
+                "lifecyclestage",
+                "lastname",
+                "firstname"
+              ],
+              "propertyMode": "valueOnly"
+            }
+          }
+        }
+      },
+      "id": "1bbd4548-4dea-4b6c-a360-2901c07656db",
+      "name": "Get Contacts",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        112
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "",
+          "name": "HubSpot Service Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "resource": "company",
+        "operation": "getAll",
+        "returnAll": true,
+        "options": {
+          "propertiesCollection": {
+            "propertiesValues": {
+              "properties": [
+                "domain",
+                "industry",
+                "phone",
+                "name"
+              ],
+              "propertyMode": "valueOnly"
+            }
+          }
+        }
+      },
+      "id": "a662a547-c50d-4cde-aae1-509d92930869",
+      "name": "Get Companies",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        432
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "",
+          "name": "HubSpot Service Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Score every contact for data hygiene issues.\nconst items = $input.all();\nconst out = [];\n\nfunction emailValid(e) {\n  return /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(e || '');\n}\n\nfor (const item of items) {\n  const p = item.json.properties || {};\n  const email = (p.email && p.email.value) || '';\n  const phone = (p.phone && p.phone.value) || '';\n  const stage = (p.lifecyclestage && p.lifecyclestage.value) || '';\n  const firstname = (p.firstname && p.firstname.value) || '';\n  const lastname = (p.lastname && p.lastname.value) || '';\n\n  const issues = [];\n  if (!email || !emailValid(email)) issues.push('Missing/invalid email');\n  if (!phone) issues.push('Missing phone');\n  if (!stage) issues.push('Missing lifecycle stage');\n\n  const score = Math.round(100 - (issues.length * (100 / 3)));\n  const name = [firstname, lastname].filter(Boolean).join(' ') || '(no name)';\n\n  out.push({\n    json: {\n      id: item.json.vid,\n      email,\n      name,\n      recordType: 'contact',\n      score,\n      issuesText: issues.length ? issues.join('; ') : 'No issues found'\n    }\n  });\n}\n\nreturn out;"
+      },
+      "id": "c71bb7db-278a-4590-85d0-34e59841eb5c",
+      "name": "Score Contacts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Score every company for data hygiene issues.\nconst items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const p = item.json.properties || {};\n  const domain = (p.domain && p.domain.value) || '';\n  const industry = (p.industry && p.industry.value) || '';\n  const phone = (p.phone && p.phone.value) || '';\n  const name = (p.name && p.name.value) || '(no name)';\n\n  const issues = [];\n  if (!domain) issues.push('Missing domain');\n  if (!industry) issues.push('Missing industry');\n  if (!phone) issues.push('Missing phone');\n\n  const score = Math.round(100 - (issues.length * (100 / 3)));\n\n  out.push({\n    json: {\n      id: item.json.companyId,\n      domain,\n      name,\n      recordType: 'company',\n      score,\n      issuesText: issues.length ? issues.join('; ') : 'No issues found'\n    }\n  });\n}\n\nreturn out;"
+      },
+      "id": "cf9fb58d-c827-4c8b-9866-e029590f63c5",
+      "name": "Score Companies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "data_quality_score",
+                "value": "={{ $json.score }}"
+              },
+              {
+                "property": "data_quality_issues",
+                "value": "={{ $json.issuesText }}"
+              }
+            ]
+          }
+        },
+        "options": {}
+      },
+      "id": "dadf0bd5-0beb-404a-834f-be4255211d04",
+      "name": "Update Contact Score",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -160
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "",
+          "name": "HubSpot Service Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "appToken",
+        "resource": "company",
+        "operation": "update",
+        "companyId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "updateFields": {
+          "customPropertiesUi": {
+            "customPropertiesValues": [
+              {
+                "property": "data_quality_score",
+                "value": "={{ $json.score }}"
+              },
+              {
+                "property": "data_quality_issues",
+                "value": "={{ $json.issuesText }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "18cddb93-6d27-4ea6-9bea-491d7524658d",
+      "name": "Update Company Score",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        240,
+        512
+      ],
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "",
+          "name": "HubSpot Service Key account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Contacts",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "recordType",
+              "displayName": "recordType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "issuesText",
+              "displayName": "issuesText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "6fa0af1c-3db7-4916-ae9d-c7518984f197",
+      "name": "Log Contacts to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        32
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Companies",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "recordType",
+              "displayName": "recordType",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "issuesText",
+              "displayName": "issuesText",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "6ae358e9-00bb-4d9a-8c64-22f7d5822051",
+      "name": "Log Companies to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        688
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "410f6439-53c5-462c-bd0b-3f9362645b0b",
+      "name": "Merge Scored Records",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        0,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build one summary row for this audit run.\nconst items = $input.all();\nconst total = items.length;\nconst flagged = items.filter(i => i.json.issuesText !== 'No issues found').length;\nconst critical = items.filter(i => i.json.score < 60).length;\nconst avg = total ? Math.round(items.reduce((s, i) => s + i.json.score, 0) / total) : 0;\n\nreturn [{\n  json: {\n    date: new Date().toISOString().slice(0, 10),\n    totalRecords: total,\n    flagged,\n    critical,\n    averageScore: avg\n  }\n}];"
+      },
+      "id": "d860ef52-040b-4da0-8b15-bfe7c6cb146e",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PASTE_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Summary",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "totalRecords",
+              "displayName": "totalRecords",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "flagged",
+              "displayName": "flagged",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "critical",
+              "displayName": "critical",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageScore",
+              "displayName": "averageScore",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "523ce448-7f7e-41c1-a283-e4225451539b",
+      "name": "Log Summary to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        480,
+        272
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ab03d6ff-be46-4671-b66e-a3e22ccdd381",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        -16,
+        0
+      ],
+      "id": "a949b768-1094-4734-9957-13bc1c6ed3a4",
+      "name": "Filter"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Contacts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contacts": {
+      "main": [
+        [
+          {
+            "node": "Score Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Companies": {
+      "main": [
+        [
+          {
+            "node": "Score Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Contacts": {
+      "main": [
+        [
+          {
+            "node": "Merge Scored Records",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Companies": {
+      "main": [
+        [
+          {
+            "node": "Merge Scored Records",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Update Company Score",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Companies to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Contact Score": {
+      "main": [
+        []
+      ]
+    },
+    "Update Company Score": {
+      "main": [
+        []
+      ]
+    },
+    "Merge Scored Records": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Log Summary to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "Update Contact Score",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Contacts to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
