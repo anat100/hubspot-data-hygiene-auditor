@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HubSpot Data Hygiene Auditor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    box-sizing: border-box;
+    --paper: #F0EFEA;
+    --paper-raised: #FAF9F6;
+    --ink: #1B1F23;
+    --ink-soft: #5B5F63;
+    --line: #D8D5CC;
+    --line-strong: #B9B5A9;
+    --clean: #2F6B4E;
+    --clean-bg: #E4EDE7;
+    --issue: #B8712C;
+    --issue-bg: #F3E7D6;
+    --critical: #A8432F;
+    --critical-bg: #F3DFDA;
+    --accent: #3E4C7A;
+    --accent-bg: #E3E6EF;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --paper: #17191C;
+      --paper-raised: #1E2124;
+      --ink: #ECEAE4;
+      --ink-soft: #9A9D9F;
+      --line: #33363A;
+      --line-strong: #46494D;
+      --clean: #6FBE93;
+      --clean-bg: #1D2B23;
+      --issue: #E0A860;
+      --issue-bg: #2E2519;
+      --critical: #E08573;
+      --critical-bg: #2E1E1B;
+      --accent: #8B9BD1;
+      --accent-bg: #21273A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #17191C;
+    --paper-raised: #1E2124;
+    --ink: #ECEAE4;
+    --ink-soft: #9A9D9F;
+    --line: #33363A;
+    --line-strong: #46494D;
+    --clean: #6FBE93;
+    --clean-bg: #1D2B23;
+    --issue: #E0A860;
+    --issue-bg: #2E2519;
+    --critical: #E08573;
+    --critical-bg: #2E1E1B;
+    --accent: #8B9BD1;
+    --accent-bg: #21273A;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); height: 100%; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.45;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  header.page { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 28px; }
+  .kicker { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); margin: 0 0 10px; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .lede { color: var(--ink-soft); max-width: 58ch; margin: 0; font-size: 15px; }
+
+  .controls { display: flex; align-items: center; gap: 14px; margin: 24px 0 30px; flex-wrap: wrap; }
+  button#run {
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14.5px;
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 11px 20px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  button#run:disabled { opacity: .5; cursor: default; }
+  button#run:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status-line { font-family: var(--mono); font-size: 13px; color: var(--ink-soft); min-height: 18px; }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 30px;
+    background: var(--paper-raised);
+  }
+  .stat { padding: 16px 18px; border-right: 1px solid var(--line); }
+  .stat:last-child { border-right: none; }
+  .stat .n { font-family: var(--mono); font-size: 24px; font-weight: 500; }
+  .stat .l { font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; }
+
+  .section-title {
+    font-size: 13px;
+    color: var(--ink-soft);
+    margin: 34px 0 10px;
+    font-family: var(--mono);
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  thead th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink-soft);
+    font-size: 12.5px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line-strong);
+  }
+  tbody tr { border-bottom: 1px solid var(--line); opacity: 0; transform: translateY(4px); transition: opacity .35s ease, transform .35s ease; }
+  tbody tr.in { opacity: 1; transform: translateY(0); }
+  tbody td { padding: 10px; vertical-align: top; }
+  td.name { font-weight: 500; }
+  td.meta { color: var(--ink-soft); font-size: 13px; }
+  .issues { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tag {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--issue-bg);
+    color: var(--issue);
+    white-space: nowrap;
+  }
+  .tag.none { background: var(--clean-bg); color: var(--clean); }
+  .score { font-family: var(--mono); font-size: 15px; text-align: right; white-space: nowrap; }
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin-left: 8px;
+  }
+  .badge.clean { background: var(--clean-bg); color: var(--clean); }
+  .badge.attn { background: var(--issue-bg); color: var(--issue); }
+  .badge.critical { background: var(--critical-bg); color: var(--critical); }
+
+  .log {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-top: 34px;
+    color: var(--ink-soft);
+    display: none;
+  }
+  .log.show { display: block; }
+  .log div { padding: 2px 0; opacity: 0; transform: translateY(3px); transition: opacity .3s ease, transform .3s ease; }
+  .log div.in { opacity: 1; transform: translateY(0); }
+  .log .ok { color: var(--clean); }
+
+  footer.note {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  footer.note a { color: var(--accent); }
+
+  @media (max-width: 640px) {
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(2) { border-right: none; }
+    table, thead, tbody, tr, td { display: block; }
+    thead { display: none; }
+    tbody tr { border: 1px solid var(--line); border-radius: 4px; margin-bottom: 10px; padding: 10px; }
+    td.score { text-align: left; margin-top: 6px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="page">
+    <p class="kicker">n8n \u2192 HubSpot \u2192 Google Sheets \u2014 simulation</p>
+    <h1>HubSpot Data Hygiene Auditor</h1>
+    <p class="lede">Scans contacts and companies for missing or invalid data, scores each record, writes the score back to HubSpot, and logs a report to Sheets. This page simulates the workflow with sample records \u2014 the real automation runs on n8n against a live HubSpot portal.</p>
+  </header>
+
+  <div class="controls">
+    <button id="run">Run audit</button>
+    <span class="status-line" id="statusLine"></span>
+  </div>
+
+  <div class="summary">
+    <div class="stat"><div class="n" id="statTotal">0</div><div class="l">Records scanned</div></div>
+    <div class="stat"><div class="n" id="statFlagged">0</div><div class="l">Flagged with issues</div></div>
+    <div class="stat"><div class="n" id="statAvg">\u2014</div><div class="l">Average score</div></div>
+    <div class="stat"><div class="n" id="statCritical">0</div><div class="l">Critical records</div></div>
+  </div>
+
+  <p class="section-title">Contacts</p>
+  <table>
+    <thead><tr><th style="width:26%">Name</th><th style="width:22%">Email</th><th>Issues found</th><th style="width:110px">Score</th></tr></thead>
+    <tbody id="contactsBody"></tbody>
+  </table>
+
+  <p class="section-title">Companies</p>
+  <table>
+    <thead><tr><th style="width:26%">Company</th><th style="width:22%">Domain</th><th>Issues found</th><th style="width:110px">Score</th></tr></thead>
+    <tbody id="companiesBody"></tbody>
+  </table>
+
+  <div class="log" id="log"></div>
+
+  <footer class="note">
+    Built by Anat Gilaad \u2014 workflow logic runs in n8n with the HubSpot and Google Sheets nodes. A ready-to-import n8n template implementing this exact scoring logic is available alongside this demo.
+  </footer>
+
+</div>
+
+<script>
+const contacts = [
+  { name: "Marta Duenas", email: "marta.duenas@vertexfin.com", phone: "+34 611 224 590", lifecyclestage: "Customer" },
+  { name: "Robert Kessler", email: "", phone: "+1 212 555 0148", lifecyclestage: "Lead" },
+  { name: "Yara Haddad", email: "y.haddad@northline.co", phone: "", lifecyclestage: "MQL" },
+  { name: "Tom Bright", email: "tom@", phone: "+44 7700 900321", lifecyclestage: "SQL" },
+  { name: "Priya Nair", email: "priya.nair@fieldwork.io", phone: "+91 98200 11223", lifecyclestage: "" },
+  { name: "Daan Verhoeven", email: "daan@brookline.nl", phone: "+31 6 1122 3344", lifecyclestage: "Customer" },
+  { name: "Chidi Okafor", email: "", phone: "", lifecyclestage: "Lead" },
+  { name: "Elin Sundqvist", email: "elin.sundqvist@nordicops.se", phone: "+46 70 123 4567", lifecyclestage: "Opportunity" }
+];
+
+const companies = [
+  { name: "Vertex Financial Group", domain: "vertexfin.com", industry: "Financial Services", phone: "+1 646 555 0110" },
+  { name: "Northline Logistics", domain: "", industry: "Logistics", phone: "+1 312 555 0199" },
+  { name: "Brookline Analytics", domain: "brookline.nl", industry: "", phone: "+31 20 555 0134" },
+  { name: "Fieldwork Labs", domain: "fieldwork.io", industry: "Software", phone: "" },
+  { name: "Nordic Ops AB", domain: "nordicops.se", industry: "Manufacturing", phone: "+46 8 555 0122" },
+  { name: "Okafor & Partners", domain: "", industry: "", phone: "" }
+];
+
+function emailValid(e) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
+function scoreContact(c) {
+  const issues = [];
+  if (!c.email || !emailValid(c.email)) issues.push("Missing/invalid email");
+  if (!c.phone) issues.push("Missing phone");
+  if (!c.lifecyclestage) issues.push("Missing lifecycle stage");
+  const score = Math.round(100 - issues.length * (100 / 3));
+  return { issues, score };
+}
+
+function scoreCompany(c) {
+  const issues = [];
+  if (!c.domain) issues.push("Missing domain");
+  if (!c.industry) issues.push("Missing industry");
+  if (!c.phone) issues.push("Missing phone");
+  const score = Math.round(100 - issues.length * (100 / 3));
+  return { issues, score };
+}
+
+function badgeFor(score) {
+  if (score === 100) return { cls: "clean", label: "Clean" };
+  if (score >= 60) return { cls: "attn", label: "Needs attention" };
+  return { cls: "critical", label: "Critical" };
+}
+
+function rowHTML(name, sub, result) {
+  const b = badgeFor(result.score);
+  const tags = result.issues.length
+    ? result.issues.map(i => `<span class="tag">${i}</span>`).join("")
+    : `<span class="tag none">No issues</span>`;
+  return `<td class="name">${name}</td>
+    <td class="meta">${sub || '\u2014'}</td>
+    <td><div class="issues">${tags}</div></td>
+    <td class="score">${result.score}<span class="badge ${b.cls}">${b.label}</span></td>`;
+}
+
+const contactResults = contacts.map(scoreContact);
+const companyResults = companies.map(scoreCompany);
+const allResults = contactResults.concat(companyResults);
+
+const btn = document.getElementById("run");
+const statusLine = document.getElementById("statusLine");
+const contactsBody = document.getElementById("contactsBody");
+const companiesBody = document.getElementById("companiesBody");
+const logEl = document.getElementById("log");
+const statTotal = document.getElementById("statTotal");
+const statFlagged = document.getElementById("statFlagged");
+const statAvg = document.getElementById("statAvg");
+const statCritical = document.getElementById("statCritical");
+
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function logLine(text, ok) {
+  const div = document.createElement("div");
+  div.innerHTML = (ok ? '<span class="ok">\u2713</span> ' : '') + text;
+  logEl.appendChild(div);
+  requestAnimationFrame(() => div.classList.add("in"));
+}
+
+async function countUp(el, to, isAvg) {
+  const steps = 14;
+  for (let i = 1; i <= steps; i++) {
+    const v = Math.round((to * i) / steps);
+    el.textContent = isAvg ? v : v;
+    await wait(18);
+  }
+  el.textContent = to;
+}
+
+async function runAudit() {
+  btn.disabled = true;
+  contactsBody.innerHTML = "";
+  companiesBody.innerHTML = "";
+  logEl.innerHTML = "";
+  logEl.classList.remove("show");
+  statTotal.textContent = "0"; statFlagged.textContent = "0"; statAvg.textContent = "\u2014"; statCritical.textContent = "0";
+
+  statusLine.textContent = "Connecting to HubSpot\u2026";
+  await wait(500);
+  statusLine.textContent = `Fetching ${contacts.length} contacts and ${companies.length} companies\u2026`;
+  await wait(650);
+  statusLine.textContent = "Running hygiene checks\u2026";
+  await wait(400);
+
+  let flagged = 0, critical = 0, total = 0;
+
+  for (let i = 0; i < contacts.length; i++) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = rowHTML(contacts[i].name, contacts[i].email, contactResults[i]);
+    contactsBody.appendChild(tr);
+    requestAnimationFrame(() => tr.classList.add("in"));
+    total++;
+    if (contactResults[i].issues.length) flagged++;
+    if (contactResults[i].score < 60) critical++;
+    statTotal.textContent = total;
+    statFlagged.textContent = flagged;
+    statCritical.textContent = critical;
+    await wait(160);
+  }
+  for (let i = 0; i < companies.length; i++) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = rowHTML(companies[i].name, companies[i].domain, companyResults[i]);
+    companiesBody.appendChild(tr);
+    requestAnimationFrame(() => tr.classList.add("in"));
+    total++;
+    if (companyResults[i].issues.length) flagged++;
+    if (companyResults[i].score < 60) critical++;
+    statTotal.textContent = total;
+    statFlagged.textContent = flagged;
+    statCritical.textContent = critical;
+    await wait(160);
+  }
+
+  const avg = Math.round(allResults.reduce((s, r) => s + r.score, 0) / allResults.length);
+  await countUp(statAvg, avg, true);
+
+  statusLine.textContent = "Writing scores back to HubSpot\u2026";
+  logEl.classList.add("show");
+  await wait(300);
+  logLine(`Updated <strong>data_quality_score</strong> on ${total} records in HubSpot`, true);
+  await wait(350);
+  logLine(`Flagged ${flagged} record${flagged === 1 ? '' : 's'} with <strong>data_quality_issues</strong> notes`, true);
+  await wait(350);
+  logLine("Appending audit results to Google Sheets report\u2026", false);
+  await wait(500);
+  logLine("Report row written \u2014 sheet: <strong>HubSpot Data Hygiene \u2014 Weekly</strong>", true);
+  await wait(300);
+
+  statusLine.textContent = `Audit complete \u2014 ${flagged} of ${total} records need attention.`;
+  btn.disabled = false;
+  btn.textContent = "Run audit again";
+}
+
+btn.addEventListener("click", runAudit);
+</script>
+</body>
+</html>
